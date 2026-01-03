@@ -42,7 +42,6 @@ RULES_READY_PAC = {
 }
 
 # --- Rules from "Church Brothers 2026 Pre-Planting Buffers.pdf" ---
-# Special Key: "Prohibited_LG" applies only to Leafy Greens
 RULES_CHURCH = {
     "Bardin": {"Prohibited": [], "Buffered": ["6", "8", "9", "10", "11"], "Elevated": ["6", "8", "9", "10", "11"]},
     "Corey": {"Prohibited": [], "Buffered": [], "Elevated": ["616", "615", "614", "613"]},
@@ -96,8 +95,7 @@ LEAFY_GREENS = ["ML", "RH", "RL", "HL"]
 
 def check_lot_compliance(ranch, lot, rules_set, crop=None):
     """
-    Checks a specific ranch/lot against a specific rules dictionary.
-    Includes logic for crop-specific prohibitions (Church Brothers).
+    Checks a specific ranch/block against a specific rules dictionary.
     """
     issues = []
     lot = str(lot).strip()
@@ -111,7 +109,7 @@ def check_lot_compliance(ranch, lot, rules_set, crop=None):
     # 1. Standard Prohibited
     if "Prohibited" in ranch_rules:
         if "ALL" in ranch_rules["Prohibited"] or lot in ranch_rules["Prohibited"]:
-            issues.append("RED LIGHT: Prohibited Lot")
+            issues.append("RED LIGHT: Prohibited Block")
 
     # 2. Leafy Green Specific Prohibited (Church Logic)
     if "Prohibited_LG" in ranch_rules and crop in LEAFY_GREENS:
@@ -134,10 +132,11 @@ def analyze_schedule(df):
     results = []
     
     for index, row in df.iterrows():
+        # --- UPDATE: Using 'Block' and 'Crop Type' columns ---
         ranch = str(row['Ranch']).strip()
-        lot = str(row['Lot']).strip()
-        comp = str(row['Comp']).strip() # Customer
-        crop = str(row['Crop']).strip() 
+        lot = str(row['Block']).strip() # Changed from Lot to Block
+        comp = str(row['Comp']).strip() 
+        crop = str(row['Crop Type']).strip() # Changed from Crop to Crop Type
         
         row_status = "Green"
         comments = []
@@ -179,9 +178,9 @@ def analyze_schedule(df):
             
         results.append({
             "Ranch": ranch,
-            "Lot": lot,
+            "Block": lot,
             "Comp": comp,
-            "Crop": crop,
+            "Crop Type": crop,
             "Status": row_status,
             "Compliance Notes": "; ".join(comments) if comments else "Clear to Plant"
         })
@@ -214,8 +213,9 @@ def main():
         st.title("🔐 Food Safety Compliance Portal")
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
+        # --- LOGIN CREDENTIALS ---
         if st.button("Login"):
-            if username == "admin" and password == "foodsafety2026": # Temp Creds
+            if username == "admin" and password == "foodsafety2026": 
                 st.session_state.logged_in = True
                 st.rerun()
             else:
@@ -229,12 +229,10 @@ def main():
 
     st.title("🌱 Pre-Planting Assessment Dashboard 2026")
     st.markdown("""
-    **Supported Customers:** Taylor Farms, Ocean Mist (OMF), Church Brothers, Bengard (BEN), Ready Pac (BFA).
-    **Logic:**
-    * **Red Light:** Prohibited Lots.
-    * **Yellow Light:** Buffer Required or Elevated LGMA Testing.
-    * **Green Light:** Clear to Plant.
-    * **Crop Logic:** Leafy Greens (ML, RH, RL, HL) have stricter rules for Church Brothers.
+    **Instructions:**
+    1. Upload your planting schedule in Excel format.
+    2. Ensure columns are named exactly: **Ranch**, **Block**, **Comp**, **Crop Type**.
+    3. Select the customers you want to scan.
     """)
 
     uploaded_file = st.file_uploader("Upload Planting Schedule (Excel)", type=["xlsx", "xls"])
@@ -242,24 +240,26 @@ def main():
     if uploaded_file:
         try:
             df = pd.read_excel(uploaded_file)
-            req_cols = ['Ranch', 'Lot', 'Comp', 'Crop']
             
+            # --- UPDATE: Checking for 'Block' and 'Crop Type' ---
+            req_cols = ['Ranch', 'Block', 'Comp', 'Crop Type']
+            
+            # Case insensitive check for user convenience (optional, but helpful)
+            # For now, we enforce strict matching to the user's request.
             if not all(c in df.columns for c in req_cols):
-                st.error(f"Excel must contain columns: {req_cols}")
+                st.error(f"Excel file is missing columns. Found: {list(df.columns)}. Required: {req_cols}")
             else:
-                st.success("File uploaded. Select customers to scan:")
+                st.success("File uploaded successfully.")
                 
-                # Dynamic Filtering
                 all_comps = df['Comp'].unique().tolist()
-                selected_comps = st.multiselect("Select Customers", all_comps, default=all_comps)
+                selected_comps = st.multiselect("Select Customers to Scan", all_comps, default=all_comps)
                 
                 if st.button("Run Compliance Scan"):
                     scan_df = df[df['Comp'].isin(selected_comps)]
                     report = analyze_schedule(scan_df)
                     
-                    # Dashboard Metrics
                     c1, c2, c3 = st.columns(3)
-                    c1.metric("Total Lots Scanned", len(report))
+                    c1.metric("Total Blocks Scanned", len(report))
                     c2.metric("Issues Found (Red)", len(report[report['Status'] == 'Red']))
                     c3.metric("Warnings (Yellow)", len(report[report['Status'] == 'Yellow']))
 
@@ -267,7 +267,7 @@ def main():
                     st.dataframe(style_dataframe(report), use_container_width=True)
                     
                     st.download_button(
-                        "Download Report",
+                        "Download Report (CSV)",
                         report.to_csv(index=False).encode('utf-8'),
                         "compliance_report_2026.csv",
                         "text/csv"
